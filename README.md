@@ -110,6 +110,14 @@ The menu at the bottom of the screen shows available commands:
 - `q` - Quit the application
 - `shift-↓/↑` - scroll in diff view
 
+## Documentation
+
+* Architecture overview – `docs/architecture.md`
+* Migration guide – `docs/migration-guide.md`
+* Developer handbook – `docs/developer-handbook.md`
+
+---
+
 ### FAQs
 
 #### Failed to start new session
