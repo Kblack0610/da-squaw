@@ -45,7 +45,7 @@ func (p *PreviewPane) SetSize(width, maxHeight int) {
 func (p *PreviewPane) setFallbackState(message string) {
 	p.previewState = previewState{
 		fallback: true,
-		text:     lipgloss.JoinVertical(lipgloss.Center, FallBackText, "", message),
+		text:     message,
 	}
 }
 
@@ -53,7 +53,7 @@ func (p *PreviewPane) setFallbackState(message string) {
 func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	switch {
 	case instance == nil:
-		p.setFallbackState("No agents running yet, fuck you. Spin up a new instance with 'n' to get started!")
+		p.setFallbackState("No agents running yet. Press 'n' to start a new instance.")
 		return nil
 	case instance.Status == session.Paused:
 		p.setFallbackState(lipgloss.JoinVertical(lipgloss.Center,
@@ -119,36 +119,13 @@ func (p *PreviewPane) String() string {
 	}
 
 	if p.previewState.fallback {
-		// Calculate available height for fallback text
-		availableHeight := p.height - 3 - 4 // 2 for borders, 1 for margin, 1 for padding
-
-		// Count the number of lines in the fallback text
-		fallbackLines := len(strings.Split(p.previewState.text, "\n"))
-
-		// Calculate padding needed above and below to center the content
-		totalPadding := availableHeight - fallbackLines
-		topPadding := 0
-		bottomPadding := 0
-		if totalPadding > 0 {
-			topPadding = totalPadding / 2
-			bottomPadding = totalPadding - topPadding // accounts for odd numbers
-		}
-
-		// Build the centered content
-		var lines []string
-		if topPadding > 0 {
-			lines = append(lines, strings.Repeat("\n", topPadding))
-		}
-		lines = append(lines, p.previewState.text)
-		if bottomPadding > 0 {
-			lines = append(lines, strings.Repeat("\n", bottomPadding))
-		}
-
-		// Center both vertically and horizontally
+		// Simple centered fallback message without excessive padding calculation
+		// Let lipgloss handle the centering
 		return previewPaneStyle.
 			Width(p.width).
-			Align(lipgloss.Center).
-			Render(strings.Join(lines, ""))
+			Height(p.height).
+			Align(lipgloss.Center, lipgloss.Center).
+			Render(p.previewState.text)
 	}
 
 	// If in copy mode, use the viewport to display scrollable content
