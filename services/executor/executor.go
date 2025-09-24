@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"time"
@@ -133,11 +134,6 @@ type Logger interface {
 	Error(format string, args ...interface{})
 }
 
-// NewExecutor creates a new command executor with the given options
-func NewExecutor(opts *ExecutorOptions) CommandExecutor {
-	// Implementation will be provided in the concrete implementation file
-	return nil
-}
 
 // MockExecutor provides a mock implementation for testing
 type MockExecutor struct {
@@ -155,7 +151,7 @@ func (m *MockExecutor) Execute(ctx context.Context, cmd Command) (*Result, error
 }
 
 func (m *MockExecutor) ExecuteWithInput(ctx context.Context, cmd Command, input []byte) (*Result, error) {
-	cmd.Stdin = io.NopCloser(io.ByteReader(input[0]))
+	cmd.Stdin = bytes.NewReader(input)
 	return m.Execute(ctx, cmd)
 }
 

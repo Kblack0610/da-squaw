@@ -10,6 +10,7 @@ import (
 	"claude-squad/services/git"
 	"claude-squad/services/storage"
 	"claude-squad/services/tmux"
+	"claude-squad/services/types"
 )
 
 // orchestratorImpl is the concrete implementation of SessionOrchestrator
@@ -20,7 +21,7 @@ type orchestratorImpl struct {
 	executor    executor.CommandExecutor
 
 	// In-memory cache of active sessions
-	sessions map[string]*Session
+	sessions map[string]*types.Session
 	mu       sync.RWMutex
 }
 
@@ -36,14 +37,14 @@ func NewOrchestrator(
 		tmuxService: tmuxService,
 		storage:     storage,
 		executor:    executor,
-		sessions:    make(map[string]*Session),
+		sessions:    make(map[string]*types.Session),
 	}
 
 	// Load existing sessions from storage
 	ctx := context.Background()
 	if sessions, err := storage.List(ctx, nil); err == nil {
 		for _, s := range sessions {
-			orch.sessions[s.ID] = &Session{
+			orch.sessions[s.ID] = &types.Session{
 				ID:        s.ID,
 				Title:     s.Title,
 				Path:      s.Path,
@@ -63,7 +64,7 @@ func NewOrchestrator(
 	return orch
 }
 
-func (o *orchestratorImpl) CreateSession(ctx context.Context, req CreateSessionRequest) (*Session, error) {
+func (o *orchestratorImpl) CreateSession(ctx context.Context, req types.CreateSessionRequest) (*types.Session, error) {
 	// Validate request
 	if req.Title == "" {
 		return nil, fmt.Errorf("session title is required")
@@ -114,12 +115,12 @@ func (o *orchestratorImpl) CreateSession(ctx context.Context, req CreateSessionR
 	}
 
 	// Create session object
-	session := &Session{
+	session := &types.Session{
 		ID:        sessionID,
 		Title:     req.Title,
 		Path:      worktree.Path,
 		Branch:    req.Branch,
-		Status:    StatusLoading,
+		Status:    types.StatusLoading,
 		Program:   req.Program,
 		Height:    req.Height,
 		Width:     req.Width,
@@ -138,7 +139,7 @@ func (o *orchestratorImpl) CreateSession(ctx context.Context, req CreateSessionR
 	}
 
 	// Save to storage
-	storageData := &storage.SessionData{
+	storageData := &types.SessionData{
 		ID:        session.ID,
 		Title:     session.Title,
 		Path:      session.Path,
@@ -167,7 +168,7 @@ func (o *orchestratorImpl) CreateSession(ctx context.Context, req CreateSessionR
 	// Update status to ready
 	go func() {
 		time.Sleep(2 * time.Second) // Give the program time to start
-		_ = o.UpdateSessionStatus(context.Background(), sessionID, StatusReady)
+		_ = o.UpdateSessionStatus(context.Background(), sessionID, types.StatusReady)
 	}()
 
 	return session, nil
@@ -179,7 +180,7 @@ func (o *orchestratorImpl) StartSession(ctx context.Context, sessionID string) e
 		return err
 	}
 
-	if session.Status != StatusPaused {
+	if session.Status != types.StatusPaused {
 		return fmt.Errorf("session is not paused")
 	}
 
@@ -195,7 +196,7 @@ func (o *orchestratorImpl) StartSession(ctx context.Context, sessionID string) e
 		return fmt.Errorf("failed to recreate tmux session: %w", err)
 	}
 
-	return o.UpdateSessionStatus(ctx, sessionID, StatusReady)
+	return o.UpdateSessionStatus(ctx, sessionID, types.StatusReady)
 }
 
 func (o *orchestratorImpl) PauseSession(ctx context.Context, sessionID string) error {
@@ -204,7 +205,7 @@ func (o *orchestratorImpl) PauseSession(ctx context.Context, sessionID string) e
 		return err
 	}
 
-	if session.Status == StatusPaused {
+	if session.Status == types.StatusPaused {
 		return nil // Already paused
 	}
 
@@ -220,7 +221,7 @@ func (o *orchestratorImpl) PauseSession(ctx context.Context, sessionID string) e
 		fmt.Printf("warning: failed to remove worktree: %v\n", err)
 	}
 
-	return o.UpdateSessionStatus(ctx, sessionID, StatusPaused)
+	return o.UpdateSessionStatus(ctx, sessionID, types.StatusPaused)
 }
 
 func (o *orchestratorImpl) ResumeSession(ctx context.Context, sessionID string) error {
@@ -258,7 +259,7 @@ func (o *orchestratorImpl) StopSession(ctx context.Context, sessionID string) er
 	return nil
 }
 
-func (o *orchestratorImpl) GetSession(ctx context.Context, sessionID string) (*Session, error) {
+func (o *orchestratorImpl) GetSession(ctx context.Context, sessionID string) (*types.Session, error) {
 	o.mu.RLock()
 	session, exists := o.sessions[sessionID]
 	o.mu.RUnlock()
@@ -273,7 +274,7 @@ func (o *orchestratorImpl) GetSession(ctx context.Context, sessionID string) (*S
 		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	session = &Session{
+	session = &types.Session{
 		ID:        data.ID,
 		Title:     data.Title,
 		Path:      data.Path,
@@ -296,15 +297,15 @@ func (o *orchestratorImpl) GetSession(ctx context.Context, sessionID string) (*S
 	return session, nil
 }
 
-func (o *orchestratorImpl) ListSessions(ctx context.Context) ([]*Session, error) {
+func (o *orchestratorImpl) ListSessions(ctx context.Context) ([]*types.Session, error) {
 	data, err := o.storage.List(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
 	}
 
-	sessions := make([]*Session, len(data))
+	sessions := make([]*types.Session, len(data))
 	for i, d := range data {
-		sessions[i] = &Session{
+		sessions[i] = &types.Session{
 			ID:        d.ID,
 			Title:     d.Title,
 			Path:      d.Path,
@@ -329,7 +330,7 @@ func (o *orchestratorImpl) AttachSession(ctx context.Context, sessionID string) 
 		return err
 	}
 
-	if session.Status != StatusReady && session.Status != StatusRunning {
+	if session.Status != types.StatusReady && session.Status != types.StatusRunning {
 		return fmt.Errorf("session is not ready or running")
 	}
 
@@ -342,7 +343,7 @@ func (o *orchestratorImpl) SendInput(ctx context.Context, sessionID string, inpu
 		return err
 	}
 
-	if session.Status != StatusReady && session.Status != StatusRunning {
+	if session.Status != types.StatusReady && session.Status != types.StatusRunning {
 		return fmt.Errorf("session is not ready or running")
 	}
 
@@ -355,7 +356,7 @@ func (o *orchestratorImpl) GetOutput(ctx context.Context, sessionID string) (str
 		return "", err
 	}
 
-	if session.Status == StatusPaused {
+	if session.Status == types.StatusPaused {
 		return "", fmt.Errorf("session is paused")
 	}
 
@@ -368,7 +369,7 @@ func (o *orchestratorImpl) GetOutput(ctx context.Context, sessionID string) (str
 	return output, nil
 }
 
-func (o *orchestratorImpl) UpdateSessionStatus(ctx context.Context, sessionID string, status Status) error {
+func (o *orchestratorImpl) UpdateSessionStatus(ctx context.Context, sessionID string, status types.Status) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 

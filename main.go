@@ -2,13 +2,14 @@ package main
 
 import (
 	"claude-squad/app"
-	cmd2 "claude-squad/cmd"
 	"claude-squad/config"
 	"claude-squad/daemon"
 	"claude-squad/log"
-	"claude-squad/session"
-	"claude-squad/session/git"
-	"claude-squad/session/tmux"
+	"claude-squad/services/executor"
+	"claude-squad/services/git"
+	"claude-squad/services/session"
+	"claude-squad/services/storage"
+	"claude-squad/services/tmux"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,7 +23,11 @@ var (
 	programFlag string
 	autoYesFlag bool
 	daemonFlag  bool
-	rootCmd     = &cobra.Command{
+
+	// Service dependencies
+	deps *app.Dependencies
+
+	rootCmd = &cobra.Command{
 		Use:   "claude-squad",
 		Short: "Claude Squad - Manage multiple AI agents like Claude Code, Aider, Codex, and Amp.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -31,10 +36,7 @@ var (
 			defer log.Close()
 
 			if daemonFlag {
-				cfg := config.LoadConfig()
-				err := daemon.RunDaemon(cfg)
-				log.ErrorLog.Printf("failed to start daemon %v", err)
-				return err
+				return runDaemon(ctx)
 			}
 
 			// Check if we're in a git repository
@@ -43,22 +45,35 @@ var (
 				return fmt.Errorf("failed to get current directory: %w", err)
 			}
 
-			if !git.IsGitRepo(currentDir) {
+			// Initialize dependencies
+			deps, err = app.InitializeDependencies()
+			if err != nil {
+				return fmt.Errorf("failed to initialize dependencies: %w", err)
+			}
+			defer deps.Cleanup()
+
+			// Check if current directory is a git repo
+			isRepo, err := deps.GitService.IsGitRepository(ctx, currentDir)
+			if err != nil {
+				return fmt.Errorf("failed to check git repository: %w", err)
+			}
+			if !isRepo {
 				return fmt.Errorf("error: claude-squad must be run from within a git repository")
 			}
 
-			cfg := config.LoadConfig()
-
 			// Program flag overrides config
-			program := cfg.DefaultProgram
+			program := deps.Config.DefaultProgram
 			if programFlag != "" {
 				program = programFlag
 			}
+
 			// AutoYes flag overrides config
-			autoYes := cfg.AutoYes
+			autoYes := deps.Config.AutoYes
 			if autoYesFlag {
 				autoYes = true
 			}
+
+			// Launch daemon if autoYes is enabled
 			if autoYes {
 				defer func() {
 					if err := daemon.LaunchDaemon(); err != nil {
@@ -66,12 +81,14 @@ var (
 					}
 				}()
 			}
-			// Kill any daemon that's running.
+
+			// Kill any running daemon
 			if err := daemon.StopDaemon(); err != nil {
 				log.ErrorLog.Printf("failed to stop daemon: %v", err)
 			}
 
-			return app.Run(ctx, program, autoYes)
+			// Run the application
+			return app.RunNew(ctx, program, autoYes)
 		},
 	}
 
@@ -79,34 +96,43 @@ var (
 		Use:   "reset",
 		Short: "Reset all stored instances",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
 			log.Initialize(false)
 			defer log.Close()
 
-			state := config.LoadState()
-			storage, err := session.NewStorage(state)
+			// Initialize dependencies
+			deps, err := app.InitializeDependencies()
 			if err != nil {
-				return fmt.Errorf("failed to initialize storage: %w", err)
+				return fmt.Errorf("failed to initialize dependencies: %w", err)
 			}
-			if err := storage.DeleteAllInstances(); err != nil {
+			defer deps.Cleanup()
+
+			// Delete all sessions from storage
+			if err := deps.Storage.DeleteAll(ctx); err != nil {
 				return fmt.Errorf("failed to reset storage: %w", err)
 			}
 			fmt.Println("Storage has been reset successfully")
 
-			if err := tmux.CleanupSessions(cmd2.MakeExecutor()); err != nil {
+			// Cleanup tmux sessions
+			if err := deps.TmuxService.CleanupSessions(ctx, "claudesquad_"); err != nil {
 				return fmt.Errorf("failed to cleanup tmux sessions: %w", err)
 			}
 			fmt.Println("Tmux sessions have been cleaned up")
 
-			if err := git.CleanupWorktrees(); err != nil {
-				return fmt.Errorf("failed to cleanup worktrees: %w", err)
+			// Cleanup git worktrees
+			repoPath, err := deps.GitService.GetRepositoryRoot(ctx, ".")
+			if err == nil {
+				if err := deps.GitService.CleanupWorktrees(ctx, repoPath); err != nil {
+					return fmt.Errorf("failed to cleanup worktrees: %w", err)
+				}
+				fmt.Println("Worktrees have been cleaned up")
 			}
-			fmt.Println("Worktrees have been cleaned up")
 
-			// Kill any daemon that's running.
+			// Kill any daemon
 			if err := daemon.StopDaemon(); err != nil {
 				return err
 			}
-			fmt.Println("daemon has been stopped")
+			fmt.Println("Daemon has been stopped")
 
 			return nil
 		},
@@ -160,6 +186,19 @@ func init() {
 	rootCmd.AddCommand(debugCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(resetCmd)
+}
+
+func runDaemon(ctx context.Context) error {
+	// Initialize dependencies for daemon
+	deps, err := app.InitializeDependencies()
+	if err != nil {
+		return fmt.Errorf("failed to initialize dependencies: %w", err)
+	}
+	defer deps.Cleanup()
+
+	// Create daemon service
+	d := daemon.NewDaemon(deps.Orchestrator, deps.Config)
+	return d.Run(ctx)
 }
 
 func main() {

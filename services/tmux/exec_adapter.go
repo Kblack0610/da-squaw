@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -506,7 +505,7 @@ func (s *execTmuxService) StreamOutput(ctx context.Context, sessionName string) 
 				return
 			default:
 				// Capture current pane output
-				output, err := s.CapturePane(ctx, sessionName, "0")
+				output, err := s.CapturePane(ctx, sanitizedName, "0")
 				if err != nil {
 					pw.CloseWithError(err)
 					return

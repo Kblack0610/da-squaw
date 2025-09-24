@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"claude-squad/services/session"
+	"claude-squad/services/types"
 )
 
 // jsonRepository is a JSON file-based implementation of StorageRepository
@@ -52,7 +52,7 @@ func (r *jsonRepository) getAllFilePaths() ([]string, error) {
 
 // Basic CRUD operations
 
-func (r *jsonRepository) Create(ctx context.Context, session *SessionData) error {
+func (r *jsonRepository) Create(ctx context.Context, session *types.SessionData) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -82,7 +82,7 @@ func (r *jsonRepository) Create(ctx context.Context, session *SessionData) error
 	return nil
 }
 
-func (r *jsonRepository) Get(ctx context.Context, id string) (*SessionData, error) {
+func (r *jsonRepository) Get(ctx context.Context, id string) (*types.SessionData, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -96,7 +96,7 @@ func (r *jsonRepository) Get(ctx context.Context, id string) (*SessionData, erro
 		return nil, fmt.Errorf("failed to read session file: %w", err)
 	}
 
-	var session SessionData
+	var session types.SessionData
 	if err := json.Unmarshal(data, &session); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session: %w", err)
 	}
@@ -104,7 +104,7 @@ func (r *jsonRepository) Get(ctx context.Context, id string) (*SessionData, erro
 	return &session, nil
 }
 
-func (r *jsonRepository) Update(ctx context.Context, session *SessionData) error {
+func (r *jsonRepository) Update(ctx context.Context, session *types.SessionData) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -151,7 +151,7 @@ func (r *jsonRepository) Delete(ctx context.Context, id string) error {
 
 // Batch operations
 
-func (r *jsonRepository) CreateBatch(ctx context.Context, sessions []*SessionData) error {
+func (r *jsonRepository) CreateBatch(ctx context.Context, sessions []*types.SessionData) error {
 	for _, session := range sessions {
 		if err := r.Create(ctx, session); err != nil {
 			return fmt.Errorf("failed to create session %s: %w", session.ID, err)
@@ -160,7 +160,7 @@ func (r *jsonRepository) CreateBatch(ctx context.Context, sessions []*SessionDat
 	return nil
 }
 
-func (r *jsonRepository) UpdateBatch(ctx context.Context, sessions []*SessionData) error {
+func (r *jsonRepository) UpdateBatch(ctx context.Context, sessions []*types.SessionData) error {
 	for _, session := range sessions {
 		if err := r.Update(ctx, session); err != nil {
 			return fmt.Errorf("failed to update session %s: %w", session.ID, err)
@@ -180,7 +180,7 @@ func (r *jsonRepository) DeleteBatch(ctx context.Context, ids []string) error {
 
 // Query operations
 
-func (r *jsonRepository) List(ctx context.Context, opts *QueryOptions) ([]*SessionData, error) {
+func (r *jsonRepository) List(ctx context.Context, opts *QueryOptions) ([]*types.SessionData, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -189,14 +189,14 @@ func (r *jsonRepository) List(ctx context.Context, opts *QueryOptions) ([]*Sessi
 		return nil, err
 	}
 
-	var sessions []*SessionData
+	var sessions []*types.SessionData
 	for _, path := range paths {
 		data, err := ioutil.ReadFile(path)
 		if err != nil {
 			continue // Skip files that can't be read
 		}
 
-		var session SessionData
+		var session types.SessionData
 		if err := json.Unmarshal(data, &session); err != nil {
 			continue // Skip invalid JSON files
 		}
@@ -244,7 +244,7 @@ func (r *jsonRepository) List(ctx context.Context, opts *QueryOptions) ([]*Sessi
 	if opts != nil && opts.Limit > 0 {
 		start := opts.Offset
 		if start >= len(sessions) {
-			return []*SessionData{}, nil
+			return []*types.SessionData{}, nil
 		}
 		end := start + opts.Limit
 		if end > len(sessions) {
@@ -281,7 +281,7 @@ func (r *jsonRepository) Exists(ctx context.Context, id string) (bool, error) {
 
 // Specialized queries
 
-func (r *jsonRepository) GetByTitle(ctx context.Context, title string) (*SessionData, error) {
+func (r *jsonRepository) GetByTitle(ctx context.Context, title string) (*types.SessionData, error) {
 	sessions, err := r.List(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -296,13 +296,13 @@ func (r *jsonRepository) GetByTitle(ctx context.Context, title string) (*Session
 	return nil, fmt.Errorf("session not found with title: %s", title)
 }
 
-func (r *jsonRepository) GetByBranch(ctx context.Context, branch string) ([]*SessionData, error) {
+func (r *jsonRepository) GetByBranch(ctx context.Context, branch string) ([]*types.SessionData, error) {
 	return r.List(ctx, &QueryOptions{Branch: &branch})
 }
 
-func (r *jsonRepository) GetActive(ctx context.Context) ([]*SessionData, error) {
-	running := session.StatusRunning
-	ready := session.StatusReady
+func (r *jsonRepository) GetActive(ctx context.Context) ([]*types.SessionData, error) {
+	running := types.StatusRunning
+	ready := types.StatusReady
 
 	sessions, err := r.List(ctx, &QueryOptions{Status: &running})
 	if err != nil {
@@ -318,14 +318,14 @@ func (r *jsonRepository) GetActive(ctx context.Context) ([]*SessionData, error) 
 	return sessions, nil
 }
 
-func (r *jsonRepository) GetPaused(ctx context.Context) ([]*SessionData, error) {
-	paused := session.StatusPaused
+func (r *jsonRepository) GetPaused(ctx context.Context) ([]*types.SessionData, error) {
+	paused := types.StatusPaused
 	return r.List(ctx, &QueryOptions{Status: &paused})
 }
 
 // Status operations
 
-func (r *jsonRepository) UpdateStatus(ctx context.Context, id string, status session.Status) error {
+func (r *jsonRepository) UpdateStatus(ctx context.Context, id string, status types.Status) error {
 	session, err := r.Get(ctx, id)
 	if err != nil {
 		return err
@@ -337,7 +337,7 @@ func (r *jsonRepository) UpdateStatus(ctx context.Context, id string, status ses
 	return r.Update(ctx, session)
 }
 
-func (r *jsonRepository) UpdateStatusBatch(ctx context.Context, updates map[string]session.Status) error {
+func (r *jsonRepository) UpdateStatusBatch(ctx context.Context, updates map[string]types.Status) error {
 	for id, status := range updates {
 		if err := r.UpdateStatus(ctx, id, status); err != nil {
 			return fmt.Errorf("failed to update status for %s: %w", id, err)
@@ -527,15 +527,15 @@ func (t *noOpTransaction) Rollback() error {
 }
 
 // Delegate all methods to the underlying repository
-func (t *noOpTransaction) Create(ctx context.Context, session *SessionData) error {
+func (t *noOpTransaction) Create(ctx context.Context, session *types.SessionData) error {
 	return t.repo.Create(ctx, session)
 }
 
-func (t *noOpTransaction) Get(ctx context.Context, id string) (*SessionData, error) {
+func (t *noOpTransaction) Get(ctx context.Context, id string) (*types.SessionData, error) {
 	return t.repo.Get(ctx, id)
 }
 
-func (t *noOpTransaction) Update(ctx context.Context, session *SessionData) error {
+func (t *noOpTransaction) Update(ctx context.Context, session *types.SessionData) error {
 	return t.repo.Update(ctx, session)
 }
 
@@ -543,11 +543,11 @@ func (t *noOpTransaction) Delete(ctx context.Context, id string) error {
 	return t.repo.Delete(ctx, id)
 }
 
-func (t *noOpTransaction) CreateBatch(ctx context.Context, sessions []*SessionData) error {
+func (t *noOpTransaction) CreateBatch(ctx context.Context, sessions []*types.SessionData) error {
 	return t.repo.CreateBatch(ctx, sessions)
 }
 
-func (t *noOpTransaction) UpdateBatch(ctx context.Context, sessions []*SessionData) error {
+func (t *noOpTransaction) UpdateBatch(ctx context.Context, sessions []*types.SessionData) error {
 	return t.repo.UpdateBatch(ctx, sessions)
 }
 
@@ -555,7 +555,7 @@ func (t *noOpTransaction) DeleteBatch(ctx context.Context, ids []string) error {
 	return t.repo.DeleteBatch(ctx, ids)
 }
 
-func (t *noOpTransaction) List(ctx context.Context, opts *QueryOptions) ([]*SessionData, error) {
+func (t *noOpTransaction) List(ctx context.Context, opts *QueryOptions) ([]*types.SessionData, error) {
 	return t.repo.List(ctx, opts)
 }
 
@@ -567,27 +567,27 @@ func (t *noOpTransaction) Exists(ctx context.Context, id string) (bool, error) {
 	return t.repo.Exists(ctx, id)
 }
 
-func (t *noOpTransaction) GetByTitle(ctx context.Context, title string) (*SessionData, error) {
+func (t *noOpTransaction) GetByTitle(ctx context.Context, title string) (*types.SessionData, error) {
 	return t.repo.GetByTitle(ctx, title)
 }
 
-func (t *noOpTransaction) GetByBranch(ctx context.Context, branch string) ([]*SessionData, error) {
+func (t *noOpTransaction) GetByBranch(ctx context.Context, branch string) ([]*types.SessionData, error) {
 	return t.repo.GetByBranch(ctx, branch)
 }
 
-func (t *noOpTransaction) GetActive(ctx context.Context) ([]*SessionData, error) {
+func (t *noOpTransaction) GetActive(ctx context.Context) ([]*types.SessionData, error) {
 	return t.repo.GetActive(ctx)
 }
 
-func (t *noOpTransaction) GetPaused(ctx context.Context) ([]*SessionData, error) {
+func (t *noOpTransaction) GetPaused(ctx context.Context) ([]*types.SessionData, error) {
 	return t.repo.GetPaused(ctx)
 }
 
-func (t *noOpTransaction) UpdateStatus(ctx context.Context, id string, status session.Status) error {
+func (t *noOpTransaction) UpdateStatus(ctx context.Context, id string, status types.Status) error {
 	return t.repo.UpdateStatus(ctx, id, status)
 }
 
-func (t *noOpTransaction) UpdateStatusBatch(ctx context.Context, updates map[string]session.Status) error {
+func (t *noOpTransaction) UpdateStatusBatch(ctx context.Context, updates map[string]types.Status) error {
 	return t.repo.UpdateStatusBatch(ctx, updates)
 }
 
@@ -628,7 +628,7 @@ func (t *noOpTransaction) BeginTx(ctx context.Context) (Transaction, error) {
 }
 
 // Helper function to sort sessions
-func sortSessions(sessions []*SessionData, sortBy, sortOrder string) {
+func sortSessions(sessions []*types.SessionData, sortBy, sortOrder string) {
 	// Implementation of sorting logic based on sortBy field
 	// This is a simplified version - you may want to use sort.Slice
 	// with appropriate comparison functions based on sortBy

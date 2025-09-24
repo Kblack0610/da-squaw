@@ -127,7 +127,7 @@ var (
 )
 
 // showHelpScreen displays the help screen overlay if it hasn't been shown before
-func (m *home) showHelpScreen(helpType helpText, onDismiss func()) (tea.Model, tea.Cmd) {
+func (m *homeV2) showHelpScreen(helpType helpText, onDismiss func()) (tea.Model, tea.Cmd) {
 	// Get the flag for this help type
 	var alwaysShow bool
 	switch helpType.(type) {
@@ -162,7 +162,7 @@ func (m *home) showHelpScreen(helpType helpText, onDismiss func()) (tea.Model, t
 }
 
 // handleHelpState handles key events when in help state
-func (m *home) handleHelpState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *homeV2) handleHelpState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Any key press will close the help overlay
 	shouldClose := m.textOverlay.HandleKeyPress(msg)
 	if shouldClose {

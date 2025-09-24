@@ -4,30 +4,13 @@ import (
 	"context"
 	"time"
 
-	"claude-squad/services/session"
+	"claude-squad/services/types"
 )
-
-// SessionData represents the persistent data of a session
-type SessionData struct {
-	ID        string            `json:"id"`
-	Title     string            `json:"title"`
-	Path      string            `json:"path"`
-	Branch    string            `json:"branch"`
-	Status    session.Status    `json:"status"`
-	Program   string            `json:"program"`
-	Height    int               `json:"height"`
-	Width     int               `json:"width"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
-	AutoYes   bool              `json:"auto_yes"`
-	Prompt    string            `json:"prompt"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-}
 
 // QueryOptions provides filtering and pagination for queries
 type QueryOptions struct {
 	// Filtering
-	Status   *session.Status
+	Status   *types.Status
 	Branch   *string
 	Path     *string
 	Program  *string
@@ -51,30 +34,30 @@ type QueryOptions struct {
 // StorageRepository provides persistence operations for sessions
 type StorageRepository interface {
 	// Basic CRUD operations
-	Create(ctx context.Context, session *SessionData) error
-	Get(ctx context.Context, id string) (*SessionData, error)
-	Update(ctx context.Context, session *SessionData) error
+	Create(ctx context.Context, session *types.SessionData) error
+	Get(ctx context.Context, id string) (*types.SessionData, error)
+	Update(ctx context.Context, session *types.SessionData) error
 	Delete(ctx context.Context, id string) error
 
 	// Batch operations
-	CreateBatch(ctx context.Context, sessions []*SessionData) error
-	UpdateBatch(ctx context.Context, sessions []*SessionData) error
+	CreateBatch(ctx context.Context, sessions []*types.SessionData) error
+	UpdateBatch(ctx context.Context, sessions []*types.SessionData) error
 	DeleteBatch(ctx context.Context, ids []string) error
 
 	// Query operations
-	List(ctx context.Context, opts *QueryOptions) ([]*SessionData, error)
+	List(ctx context.Context, opts *QueryOptions) ([]*types.SessionData, error)
 	Count(ctx context.Context, opts *QueryOptions) (int, error)
 	Exists(ctx context.Context, id string) (bool, error)
 
 	// Specialized queries
-	GetByTitle(ctx context.Context, title string) (*SessionData, error)
-	GetByBranch(ctx context.Context, branch string) ([]*SessionData, error)
-	GetActive(ctx context.Context) ([]*SessionData, error)
-	GetPaused(ctx context.Context) ([]*SessionData, error)
+	GetByTitle(ctx context.Context, title string) (*types.SessionData, error)
+	GetByBranch(ctx context.Context, branch string) ([]*types.SessionData, error)
+	GetActive(ctx context.Context) ([]*types.SessionData, error)
+	GetPaused(ctx context.Context) ([]*types.SessionData, error)
 
 	// Status operations
-	UpdateStatus(ctx context.Context, id string, status session.Status) error
-	UpdateStatusBatch(ctx context.Context, updates map[string]session.Status) error
+	UpdateStatus(ctx context.Context, id string, status types.Status) error
+	UpdateStatusBatch(ctx context.Context, updates map[string]types.Status) error
 
 	// Metadata operations
 	SetMetadata(ctx context.Context, id string, key, value string) error
