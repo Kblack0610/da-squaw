@@ -109,9 +109,9 @@ func (t *TmuxSession) Start(workDir string) error {
 		return fmt.Errorf("error starting tmux session: %w", err)
 	}
 
-	// Poll for session existence with exponential backoff
-	timeout := time.After(2 * time.Second)
-	sleepDuration := 5 * time.Millisecond
+	// Poll for session existence with minimal delay
+	timeout := time.After(1 * time.Second)
+	sleepDuration := 2 * time.Millisecond
 	for !t.DoesSessionExist() {
 		select {
 		case <-timeout:
@@ -121,8 +121,8 @@ func (t *TmuxSession) Start(workDir string) error {
 			return fmt.Errorf("timed out waiting for tmux session %s: %v", t.sanitizedName, err)
 		default:
 			time.Sleep(sleepDuration)
-			// Exponential backoff up to 50ms max
-			if sleepDuration < 50*time.Millisecond {
+			// Exponential backoff up to 20ms max
+			if sleepDuration < 20*time.Millisecond {
 				sleepDuration *= 2
 			}
 		}
@@ -160,9 +160,9 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 
 		// Deal with "do you trust the files" screen by sending an enter keystroke.
-		// Use exponential backoff with longer timeout for reliability on slow systems
+		// Use shorter initial delay and faster checking
 		startTime := time.Now()
-		sleepDuration := 100 * time.Millisecond
+		sleepDuration := 20 * time.Millisecond
 		attempt := 0
 
 		for time.Since(startTime) < maxWaitTime {
@@ -180,10 +180,10 @@ func (t *TmuxSession) Start(workDir string) error {
 				}
 			}
 
-			// Exponential backoff with cap at 1 second
-			sleepDuration = time.Duration(float64(sleepDuration) * 1.2)
-			if sleepDuration > time.Second {
-				sleepDuration = time.Second
+			// Exponential backoff with cap at 200ms for faster response
+			sleepDuration = time.Duration(float64(sleepDuration) * 1.5)
+			if sleepDuration > 200*time.Millisecond {
+				sleepDuration = 200 * time.Millisecond
 			}
 		}
 	}
@@ -295,10 +295,10 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 	}()
 
 	go func() {
-		// Close the channel after 50ms
+		// Close the channel after 20ms (reduced from 50ms for faster response)
 		timeoutCh := make(chan struct{})
 		go func() {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 			close(timeoutCh)
 		}()
 
@@ -319,7 +319,7 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 			// but this works well for now. Log this for debugging.
 			//
 			// There seems to always be control characters, but I think it's possible for there not to be. The heuristic
-			// here can be: if there's characters within 50ms, then assume they are control characters and nuke them.
+			// here can be: if there's characters within 20ms, then assume they are control characters and nuke them.
 			select {
 			case <-timeoutCh:
 			default:
@@ -406,11 +406,13 @@ func (t *TmuxSession) Detach() {
 		log.ErrorLog.Println(msg)
 		panic(msg)
 	}
+
 	// Attach goroutines should die on EOF due to the ptmx closing. Call
-	// t.Restore to set a new t.ptmx.
+	// t.Restore to set a new t.ptmx. This MUST happen before we return
+	// to ensure the preview functionality continues to work.
 	if err = t.Restore(); err != nil {
 		// This is a fatal error. Our invariant that a started TmuxSession always has a valid ptmx is violated.
-		msg := fmt.Sprintf("error closing attach pty session: %v", err)
+		msg := fmt.Sprintf("error restoring tmux session after detach: %v", err)
 		log.ErrorLog.Println(msg)
 		panic(msg)
 	}
