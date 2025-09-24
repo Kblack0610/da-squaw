@@ -3,216 +3,165 @@ package daemon
 import (
 	"claude-squad/config"
 	"claude-squad/log"
-	"claude-squad/services/session"
-	"claude-squad/services/types"
-	"context"
+	"claude-squad/session"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 )
 
-// Daemon manages the background process that handles AutoYes mode for all sessions
-type Daemon struct {
-	orchestrator session.SessionOrchestrator
-	config       *config.Config
-	sessions     map[string]*types.Session
-	mu           sync.RWMutex
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
-}
-
-// NewDaemon creates a new daemon instance
-func NewDaemon(orchestrator session.SessionOrchestrator, config *config.Config) *Daemon {
-	return &Daemon{
-		orchestrator: orchestrator,
-		config:       config,
-		sessions:     make(map[string]*types.Session),
-		stopCh:       make(chan struct{}),
-	}
-}
-
-// Run starts the daemon process
-func (d *Daemon) Run(ctx context.Context) error {
+// RunDaemon runs the daemon process which iterates over all sessions and runs AutoYes mode on them.
+// It's expected that the main process kills the daemon when the main process starts.
+func RunDaemon(cfg *config.Config) error {
 	log.InfoLog.Printf("starting daemon")
-
-	// Load initial sessions
-	if err := d.loadSessions(ctx); err != nil {
-		return fmt.Errorf("failed to load sessions: %w", err)
+	state := config.LoadState()
+	storage, err := session.NewStorage(state)
+	if err != nil {
+		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
 
-	pollInterval := time.Duration(d.config.DaemonPollInterval) * time.Millisecond
+	instances, err := storage.LoadInstances()
+	if err != nil {
+		return fmt.Errorf("failed to load instacnes: %w", err)
+	}
+	for _, instance := range instances {
+		// Assume AutoYes is true if the daemon is running.
+		instance.AutoYes = true
+	}
+
+	pollInterval := time.Duration(cfg.DaemonPollInterval) * time.Millisecond
+
+	// If we get an error for a session, it's likely that we'll keep getting the error. Log every 30 seconds.
 	everyN := log.NewEvery(60 * time.Second)
 
-	// Start monitoring goroutine
-	d.wg.Add(1)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	stopCh := make(chan struct{})
 	go func() {
-		defer d.wg.Done()
+		defer wg.Done()
 		ticker := time.NewTimer(pollInterval)
-		defer ticker.Stop()
-
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-d.stopCh:
-				return
-			case <-ticker.C:
-				d.processSessions(ctx, everyN)
-				ticker.Reset(pollInterval)
+			for _, instance := range instances {
+				// We only store started instances, but check anyway.
+				if instance.Started() && !instance.Paused() {
+					if _, hasPrompt := instance.HasUpdated(); hasPrompt {
+						instance.TapEnter()
+						if err := instance.UpdateDiffStats(); err != nil {
+							if everyN.ShouldLog() {
+								log.WarningLog.Printf("could not update diff stats for %s: %v", instance.Title, err)
+							}
+						}
+					}
+				}
 			}
+
+			// Handle stop before ticker.
+			select {
+			case <-stopCh:
+				return
+			default:
+			}
+
+			<-ticker.C
+			ticker.Reset(pollInterval)
 		}
 	}()
 
-	// Set up signal handling
+	// Notify on SIGINT (Ctrl+C) and SIGTERM. Save instances before
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-sigChan
+	log.InfoLog.Printf("received signal %s", sig.String())
 
-	select {
-	case sig := <-sigChan:
-		log.InfoLog.Printf("received signal %s", sig.String())
-	case <-ctx.Done():
-		log.InfoLog.Printf("context cancelled")
+	// Stop the goroutine so we don't race.
+	close(stopCh)
+	wg.Wait()
+
+	if err := storage.SaveInstances(instances); err != nil {
+		log.ErrorLog.Printf("failed to save instances when terminating daemon: %v", err)
 	}
-
-	// Shutdown
-	close(d.stopCh)
-	d.wg.Wait()
-
-	// Save session states
-	if err := d.saveSessions(ctx); err != nil {
-		log.ErrorLog.Printf("failed to save sessions: %v", err)
-	}
-
-	log.InfoLog.Printf("daemon stopped")
 	return nil
 }
 
-func (d *Daemon) loadSessions(ctx context.Context) error {
-	sessions, err := d.orchestrator.ListSessions(ctx)
+// LaunchDaemon launches the daemon process.
+func LaunchDaemon() error {
+	// Find the claude squad binary.
+	execPath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to list sessions: %w", err)
+		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	cmd := exec.Command(execPath, "--daemon")
 
-	for _, sess := range sessions {
-		// Enable AutoYes for all sessions in daemon mode
-		sess.AutoYes = true
-		d.sessions[sess.ID] = sess
+	// Detach the process from the parent
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	// Set process group to prevent signals from propagating
+	cmd.SysProcAttr = getSysProcAttr()
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start child process: %w", err)
 	}
 
-	log.InfoLog.Printf("loaded %d sessions", len(d.sessions))
-	return nil
-}
+	log.InfoLog.Printf("started daemon child process with PID: %d", cmd.Process.Pid)
 
-func (d *Daemon) processSessions(ctx context.Context, everyN *log.Every) {
-	d.mu.RLock()
-	sessionIDs := make([]string, 0, len(d.sessions))
-	for id := range d.sessions {
-		sessionIDs = append(sessionIDs, id)
-	}
-	d.mu.RUnlock()
-
-	for _, id := range sessionIDs {
-		d.processSession(ctx, id, everyN)
-	}
-}
-
-func (d *Daemon) processSession(ctx context.Context, sessionID string, everyN *log.Every) {
-	d.mu.RLock()
-	sess, exists := d.sessions[sessionID]
-	d.mu.RUnlock()
-
-	if !exists {
-		return
-	}
-
-	// Only process running or ready sessions
-	if sess.Status != types.StatusRunning && sess.Status != types.StatusReady {
-		return
-	}
-
-	// Check if session has output that needs response
-	output, err := d.orchestrator.GetOutput(ctx, sessionID)
+	// Save PID to a file for later management
+	pidDir, err := config.GetConfigDir()
 	if err != nil {
-		if everyN.ShouldLog() {
-			log.WarningLog.Printf("could not get output for session %s: %v", sess.Title, err)
-		}
-		return
+		return fmt.Errorf("failed to get config directory: %w", err)
 	}
 
-	// Simple heuristic: if output ends with prompt-like patterns, send Enter
-	if d.shouldRespond(output) {
-		if err := d.orchestrator.SendInput(ctx, sessionID, "\n"); err != nil {
-			if everyN.ShouldLog() {
-				log.WarningLog.Printf("could not send input to session %s: %v", sess.Title, err)
-			}
-		} else {
-			log.InfoLog.Printf("sent auto-response to session %s", sess.Title)
-		}
+	pidFile := filepath.Join(pidDir, "daemon.pid")
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
+		return fmt.Errorf("failed to write PID file: %w", err)
 	}
 
-	// Update session status
-	updatedSession, err := d.orchestrator.GetSession(ctx, sessionID)
-	if err == nil {
-		d.mu.Lock()
-		d.sessions[sessionID] = updatedSession
-		d.mu.Unlock()
-	}
-}
-
-func (d *Daemon) shouldRespond(output string) bool {
-	// Check for common prompt patterns that indicate waiting for input
-	promptPatterns := []string{
-		"[Y/n]",
-		"(y/N)",
-		"Continue?",
-		"Proceed?",
-		"Press Enter",
-		"press enter",
-		"Hit enter",
-		"hit enter",
-		">>> ",
-		"claude> ",
-		"aider> ",
-		"> ",
-	}
-
-	for _, pattern := range promptPatterns {
-		if len(output) > len(pattern) {
-			tail := output[len(output)-len(pattern)-10:]
-			if containsPattern(tail, pattern) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-func containsPattern(text, pattern string) bool {
-	// Simple substring check - could be enhanced with regex
-	return len(text) > 0 && len(pattern) > 0 &&
-		   (text == pattern ||
-		    (len(text) > len(pattern) && text[len(text)-len(pattern):] == pattern))
-}
-
-func (d *Daemon) saveSessions(ctx context.Context) error {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	// Sessions are automatically persisted by the orchestrator
-	// This is a no-op but could be used for final cleanup
-	log.InfoLog.Printf("saved %d sessions", len(d.sessions))
+	// Don't wait for the child to exit, it's detached
 	return nil
 }
 
-// Stop gracefully stops the daemon
-func (d *Daemon) Stop() {
-	close(d.stopCh)
-	d.wg.Wait()
+// StopDaemon attempts to stop a running daemon process if it exists. Returns no error if the daemon is not found
+// (assumes the daemon does not exist).
+func StopDaemon() error {
+	pidDir, err := config.GetConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get config directory: %w", err)
+	}
+
+	pidFile := filepath.Join(pidDir, "daemon.pid")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read PID file: %w", err)
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
+		return fmt.Errorf("invalid PID file format: %w", err)
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("failed to find daemon process: %w", err)
+	}
+
+	if err := proc.Kill(); err != nil {
+		return fmt.Errorf("failed to stop daemon process: %w", err)
+	}
+
+	// Clean up PID file
+	if err := os.Remove(pidFile); err != nil {
+		return fmt.Errorf("failed to remove PID file: %w", err)
+	}
+
+	log.InfoLog.Printf("daemon process (PID: %d) stopped successfully", pid)
+	return nil
 }

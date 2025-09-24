@@ -2,7 +2,7 @@ package ui
 
 import (
 	"claude-squad/log"
-	"claude-squad/services/types"
+	"claude-squad/session"
 	"errors"
 	"fmt"
 	"strings"
@@ -53,7 +53,7 @@ var autoYesStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#1a1a1a"))
 
 type List struct {
-	items         []*types.SessionAdapter
+	items         []*session.Instance
 	selectedIdx   int
 	height, width int
 	renderer      *InstanceRenderer
@@ -66,7 +66,7 @@ type List struct {
 
 func NewList(spinner *spinner.Model, autoYes bool) *List {
 	return &List{
-		items:    []*types.SessionAdapter{},
+		items:    []*session.Instance{},
 		renderer: &InstanceRenderer{spinner: spinner},
 		repos:    make(map[string]int),
 		autoyes:  autoYes,
@@ -100,7 +100,7 @@ func (l *List) NumInstances() int {
 	return len(l.items)
 }
 
-// InstanceRenderer handles rendering of SessionAdapter objects
+// InstanceRenderer handles rendering of session.Instance objects
 type InstanceRenderer struct {
 	spinner *spinner.Model
 	width   int
@@ -113,7 +113,7 @@ func (r *InstanceRenderer) setWidth(width int) {
 // ɹ and ɻ are other options.
 const branchIcon = "Ꮧ"
 
-func (r *InstanceRenderer) Render(i *types.SessionAdapter, idx int, selected bool, hasMultipleRepos bool) string {
+func (r *InstanceRenderer) Render(i *session.Instance, idx int, selected bool, hasMultipleRepos bool) string {
 	prefix := fmt.Sprintf(" %d. ", idx)
 	if idx >= 10 {
 		prefix = prefix[:len(prefix)-1]
@@ -128,11 +128,11 @@ func (r *InstanceRenderer) Render(i *types.SessionAdapter, idx int, selected boo
 	// add spinner next to title if it's running
 	var join string
 	switch i.Status {
-	case types.StatusRunning:
+	case session.Running:
 		join = fmt.Sprintf("%s ", r.spinner.View())
-	case types.StatusReady:
+	case session.Ready:
 		join = readyStyle.Render(readyIcon)
-	case types.StatusPaused:
+	case session.Paused:
 		join = pausedStyle.Render(pausedIcon)
 	default:
 	}
@@ -334,7 +334,7 @@ func (l *List) rmRepo(repo string) {
 // AddInstance adds a new instance to the list. It returns a finalizer function that should be called when the instance
 // is started. If the instance was restored from storage or is paused, you can call the finalizer immediately.
 // When creating a new one and entering the name, you want to call the finalizer once the name is done.
-func (l *List) AddInstance(instance *types.SessionAdapter) (finalize func()) {
+func (l *List) AddInstance(instance *session.Instance) (finalize func()) {
 	l.items = append(l.items, instance)
 	// The finalizer registers the repo name once the instance is started.
 	return func() {
@@ -349,7 +349,7 @@ func (l *List) AddInstance(instance *types.SessionAdapter) (finalize func()) {
 }
 
 // GetSelectedInstance returns the currently selected instance
-func (l *List) GetSelectedInstance() *types.SessionAdapter {
+func (l *List) GetSelectedInstance() *session.Instance {
 	if len(l.items) == 0 {
 		return nil
 	}
@@ -365,6 +365,6 @@ func (l *List) SetSelectedInstance(idx int) {
 }
 
 // GetInstances returns all instances in the list
-func (l *List) GetInstances() []*types.SessionAdapter {
+func (l *List) GetInstances() []*session.Instance {
 	return l.items
 }

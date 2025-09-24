@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"claude-squad/services/types"
+	"claude-squad/session"
 	"fmt"
 	"strings"
 
@@ -40,7 +40,7 @@ func (d *DiffPane) SetSize(width, height int) {
 	}
 }
 
-func (d *DiffPane) SetDiff(instance *types.SessionAdapter) {
+func (d *DiffPane) SetDiff(instance *session.Instance) {
 	centeredFallbackMessage := lipgloss.Place(
 		d.width,
 		d.height,

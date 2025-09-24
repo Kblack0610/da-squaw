@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"claude-squad/services/types"
+	"claude-squad/session"
 	"fmt"
 	"strings"
 
@@ -50,12 +50,12 @@ func (p *PreviewPane) setFallbackState(message string) {
 }
 
 // Updates the preview pane content with the tmux pane content
-func (p *PreviewPane) UpdateContent(instance *types.SessionAdapter) error {
+func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	switch {
 	case instance == nil:
 		p.setFallbackState("No agents running yet. Press 'n' to start a new instance.")
 		return nil
-	case instance.Status == types.StatusPaused:
+	case instance.Status == session.Paused:
 		p.setFallbackState(lipgloss.JoinVertical(lipgloss.Center,
 			"Session is paused. Press 'r' to resume.",
 			"",
@@ -157,8 +157,8 @@ func (p *PreviewPane) String() string {
 }
 
 // ScrollUp scrolls up in the viewport
-func (p *PreviewPane) ScrollUp(instance *types.SessionAdapter) error {
-	if instance == nil || instance.Status == types.StatusPaused {
+func (p *PreviewPane) ScrollUp(instance *session.Instance) error {
+	if instance == nil || instance.Status == session.Paused {
 		return nil
 	}
 
@@ -190,8 +190,8 @@ func (p *PreviewPane) ScrollUp(instance *types.SessionAdapter) error {
 }
 
 // ScrollDown scrolls down in the viewport
-func (p *PreviewPane) ScrollDown(instance *types.SessionAdapter) error {
-	if instance == nil || instance.Status == types.StatusPaused {
+func (p *PreviewPane) ScrollDown(instance *session.Instance) error {
+	if instance == nil || instance.Status == session.Paused {
 		return nil
 	}
 
@@ -223,8 +223,8 @@ func (p *PreviewPane) ScrollDown(instance *types.SessionAdapter) error {
 }
 
 // ResetToNormalMode exits scroll mode and returns to normal mode
-func (p *PreviewPane) ResetToNormalMode(instance *types.SessionAdapter) error {
-	if instance == nil || instance.Status == types.StatusPaused {
+func (p *PreviewPane) ResetToNormalMode(instance *session.Instance) error {
+	if instance == nil || instance.Status == session.Paused {
 		return nil
 	}
 

@@ -2,7 +2,7 @@ package ui
 
 import (
 	"claude-squad/log"
-	"claude-squad/services/types"
+	"claude-squad/session"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -51,7 +51,7 @@ type TabbedWindow struct {
 
 	preview  *PreviewPane
 	diff     *DiffPane
-	instance *types.SessionAdapter
+	instance *session.Instance
 }
 
 func NewTabbedWindow(preview *PreviewPane, diff *DiffPane) *TabbedWindow {
@@ -65,7 +65,7 @@ func NewTabbedWindow(preview *PreviewPane, diff *DiffPane) *TabbedWindow {
 	}
 }
 
-func (w *TabbedWindow) SetInstance(instance *types.SessionAdapter) {
+func (w *TabbedWindow) SetInstance(instance *session.Instance) {
 	w.instance = instance
 }
 
@@ -99,7 +99,7 @@ func (w *TabbedWindow) Toggle() {
 }
 
 // ToggleWithReset toggles the tab and resets preview pane to normal mode
-func (w *TabbedWindow) ToggleWithReset(instance *types.SessionAdapter) error {
+func (w *TabbedWindow) ToggleWithReset(instance *session.Instance) error {
 	// Reset preview pane to normal mode before switching
 	if err := w.preview.ResetToNormalMode(instance); err != nil {
 		return err
@@ -109,14 +109,14 @@ func (w *TabbedWindow) ToggleWithReset(instance *types.SessionAdapter) error {
 }
 
 // UpdatePreview updates the content of the preview pane. instance may be nil.
-func (w *TabbedWindow) UpdatePreview(instance *types.SessionAdapter) error {
+func (w *TabbedWindow) UpdatePreview(instance *session.Instance) error {
 	if w.activeTab != PreviewTab {
 		return nil
 	}
 	return w.preview.UpdateContent(instance)
 }
 
-func (w *TabbedWindow) UpdateDiff(instance *types.SessionAdapter) {
+func (w *TabbedWindow) UpdateDiff(instance *session.Instance) {
 	if w.activeTab != DiffTab {
 		return
 	}
@@ -124,7 +124,7 @@ func (w *TabbedWindow) UpdateDiff(instance *types.SessionAdapter) {
 }
 
 // ResetPreviewToNormalMode resets the preview pane to normal mode
-func (w *TabbedWindow) ResetPreviewToNormalMode(instance *types.SessionAdapter) error {
+func (w *TabbedWindow) ResetPreviewToNormalMode(instance *session.Instance) error {
 	return w.preview.ResetToNormalMode(instance)
 }
 
