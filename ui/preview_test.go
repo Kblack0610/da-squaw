@@ -360,7 +360,7 @@ func TestPreviewContentWithoutScrolling(t *testing.T) {
 
 	// Create the preview pane
 	previewPane := NewPreviewPane()
-	previewPane.SetSize(80, 30) // Set reasonable size for testing
+	previewPane.SetSize(40, 20) // Set reasonable size for testing
 
 	// Update the preview content (this should display the content without scrolling)
 	err := previewPane.UpdateContent(setup.instance)

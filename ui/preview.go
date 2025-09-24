@@ -53,7 +53,7 @@ func (p *PreviewPane) setFallbackState(message string) {
 func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	switch {
 	case instance == nil:
-		p.setFallbackState("No agents running yet. Spin up a new instance with 'n' to get started!")
+		p.setFallbackState("No agents running yet, fuck you. Spin up a new instance with 'n' to get started!")
 		return nil
 	case instance.Status == session.Paused:
 		p.setFallbackState(lipgloss.JoinVertical(lipgloss.Center,
